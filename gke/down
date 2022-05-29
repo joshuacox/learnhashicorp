@@ -1,0 +1,21 @@
+#!/bin/bash
+main  () {
+#kubectl delete -f devwebapp.yaml
+#helm delete vault
+#helm delete consul
+#set -eux
+#set -x
+still_running=1
+while [[ $still_running -eq 1 ]]; do
+  kubectl get po|grep vault-0
+  if [[ $? ]]; then
+    echo stopped
+    still_running=0
+  else
+    echo still running
+    still_running=1
+  fi
+done
+yes Y | gcloud container clusters delete learn-vault001 --region=us-central1
+}
+time main $@

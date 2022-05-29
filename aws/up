@@ -1,0 +1,22 @@
+#!/bin/bash
+set -eux
+number=$(cat ~/.aws/.cluster-number)
+
+main () {
+  echo up
+  date '+%Y-%m-%d %T %s'
+  #aws configure
+
+  eksctl create cluster \
+      --name learn-vault${number} \
+      --nodes 3 \
+      --with-oidc \
+      --ssh-access \
+      --ssh-public-key learn-vault${number} \
+      --managed
+
+  sleep 5
+  kubectl get nodes
+}
+
+time main $@

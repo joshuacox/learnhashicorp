@@ -1,0 +1,9 @@
+#!/bin/bash
+set -eux
+number=$(cat .cluster-number)
+
+main () {
+  aws ec2 create-key-pair --key-name learn-vault${number} > id_aws
+}
+
+time main $@

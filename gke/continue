@@ -1,0 +1,106 @@
+#!/bin/bash
+set -eux
+
+repo () {
+  helm repo add hashicorp https://helm.releases.hashicorp.com
+  helm repo update
+  helm search repo vault --versions
+}
+
+consulinstallr () {
+  kubectl create secret generic consul-gossip-encryption-key --from-literal=key=$(consul keygen)
+  helm install consul hashicorp/consul \
+    --values consul-values.yaml
+  ~/.kubash/w8s/generic.w8 consul-server-0 default
+}
+
+installr () {
+  helm install vault hashicorp/vault \
+    --set='replicas=1'
+}
+
+installrvalues () {
+  helm install vault hashicorp/vault \
+    --values vault-values.yaml
+}
+
+installrHA () {
+  helm install vault hashicorp/vault \
+    --set='server.ha.enabled=true' \
+    --set='server.ha.raft.enabled=true'
+}
+
+unseal () {
+  ~/.kubash/w8s/generic.w8 vault-0 default
+
+  kubectl get pods
+  sleep 33
+  #  kubectl exec vault-0 -- vault status
+  kubectl exec vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json > cluster-keys.json
+  VAULT_UNSEAL_KEY=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[]")
+  kubectl exec vault-0 -- vault operator unseal $VAULT_UNSEAL_KEY
+  kubectl exec vault-0 -- vault status
+  CLUSTER_ROOT_TOKEN=$(cat cluster-keys.json | jq -r ".root_token")
+
+  sleep 30
+  kubectl exec vault-0 -- vault login $CLUSTER_ROOT_TOKEN
+  exit 1
+  #kubectl exec vault-0 -- vault operator raft list-peers
+  #kubectl exec vault-1 -- vault operator raft join http://vault-0.vault-internal:8200
+  kubectl exec vault-1 -- vault operator unseal $VAULT_UNSEAL_KEY
+  #kubectl exec vault-2 -- vault operator raft join http://vault-0.vault-internal:8200
+  kubectl exec vault-2 -- vault operator unseal $VAULT_UNSEAL_KEY
+  #kubectl exec vault-0 -- vault operator raft list-peers
+  kubectl get pods
+}
+
+nexty () {
+  kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c "vault secrets enable -path=secret kv-v2"
+  kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c "vault kv put secret/devwebapp/config username='giraffe' password='salsa'"
+  kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c "vault kv get secret/devwebapp/config"
+  #kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c ""
+  kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c "vault auth enable kubernetes"
+  kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c 'vault write auth/kubernetes/config token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443" kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+
+# Break indentation
+kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c 'vault policy write devwebapp - <<EOF
+path "secret/data/devwebapp/config" {
+  capabilities = ["read"]
+}
+EOF
+'
+kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c 'vault write auth/kubernetes/role/devweb-app \
+        bound_service_account_names=internal-app \
+        bound_service_account_namespaces=default \
+        policies=devwebapp \
+        ttl=24h
+'
+# Unbreak indentation
+
+  kubectl create sa internal-app
+
+  kubectl apply --filename devwebapp.yaml
+  ~/.kubash/w8s/generic.w8 devwebapp default
+  kubectl get pods
+
+  kubectl exec --stdin=true --tty=true devwebapp -c devwebapp -- cat /vault/secrets/credentials.txt
+}
+
+openebsr () {
+  mkdir -p ~/.kubash/clusters/gke
+  cp ~/.kube/config ~/.kubash/clusters/gke
+  kubash -n gke openebs
+}
+
+main () {
+  repo
+  openebsr
+  consulinstallr
+  #installrHA
+  #installr
+  installrvalues
+  unseal
+  nexty
+}
+
+time main

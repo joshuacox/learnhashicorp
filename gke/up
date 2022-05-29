@@ -1,0 +1,17 @@
+#!/bin/bash
+set -eux
+
+
+main () {
+  gcloud config set project $(cat ~/.gke/project_name)
+  gcloud config set compute/region us-central1
+  gcloud services enable container.googleapis.com
+  gcloud container clusters create \
+    --num-nodes=5 \
+    --disk-size=50 \
+    --disk-type=pd-standard \
+    --region=us-central1 \
+    learn-vault001 
+}
+
+time main $@

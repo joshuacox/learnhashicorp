@@ -1,0 +1,23 @@
+#!/bin/bash
+main  () {
+  set -x
+  kubectl delete -f devwebapp.yaml
+  helm delete vault
+  still_running=1
+  while [[ $still_running -eq 1 ]]; do
+    kubectl get po|grep vault-0
+    if [[ $? ]]; then
+      echo stopped
+      still_running=0
+    else
+      echo still running
+      still_running=1
+    fi
+  done
+  #az group delete --name learn-vault --yes --no-wait
+  set -eux
+  az group delete \
+    --name learn-vault-cus \
+    --yes
+}
+time main $@

@@ -1,0 +1,10 @@
+#!/bin/bash
+set -eux
+main () {
+  ./up
+  sleep 30
+  ./continue
+  sleep 3
+  ./down
+}
+time main $@

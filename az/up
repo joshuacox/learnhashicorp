@@ -1,0 +1,18 @@
+#!/bin/bash
+set -eux
+#az account list-locations | jq -r ".[].name"
+
+main () {
+  az group create --name learn-vault-cus --location centralus
+  az aks create \
+    --resource-group learn-vault-cus \
+    --name learn-vault-cluster \
+    --node-count 1 \
+    --enable-addons monitoring \
+    --verbose \
+    --node-vm-size standard_ds4 \
+    --generate-ssh-keys
+
+  az aks get-credentials --resource-group learn-vault-cus --name learn-vault-cluster
+}
+time main $@

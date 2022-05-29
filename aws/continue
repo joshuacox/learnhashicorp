@@ -1,0 +1,92 @@
+#!/bin/bash
+set -eux
+
+mysql_run () {
+  helm repo add bitnami https://charts.bitnami.com/bitnami
+  helm install mysql bitnami/mysql
+  ~/.kubash/w8s/generic.w8 mysql-0 default
+  kubectl get services
+  ROOT_PASSWORD=$(kubectl get secret --namespace default mysql -o jsonpath="{.data.mysql-root-password}" | base64 --decode)
+}
+
+vault_run () {
+  helm repo add hashicorp https://helm.releases.hashicorp.com
+  helm repo update
+  helm search repo vault --versions
+  helm install vault hashicorp/vault \
+      --set='server.ha.enabled=true' \
+      --set='server.ha.raft.enabled=true'
+
+  ~/.kubash/w8s/generic.w8 vault-0 default
+  kubectl get pods
+
+  set +e
+  kubectl exec vault-0 -- vault status
+  set -e
+
+  kubectl exec vault-0 -- vault operator init \
+      -key-shares=1 \
+      -key-threshold=1 \
+      -format=json > cluster-keys.json
+
+  VAULT_UNSEAL_KEY=$(cat cluster-keys.json | jq -r ".unseal_keys_b64[]")
+  kubectl exec vault-0 -- vault operator unseal $VAULT_UNSEAL_KEY
+  kubectl exec vault-0 -- vault status
+  CLUSTER_ROOT_TOKEN=$(cat cluster-keys.json | jq -r ".root_token")
+  sleep 30
+  kubectl exec vault-0 -- vault login $CLUSTER_ROOT_TOKEN
+}
+
+nexty () {
+  kubectl exec vault-0 -- vault operator raft list-peers
+  kubectl exec vault-1 -- vault operator raft join http://vault-0.vault-internal:8200
+  kubectl exec vault-1 -- vault operator unseal $VAULT_UNSEAL_KEY
+  kubectl exec vault-2 -- vault operator raft join http://vault-0.vault-internal:8200
+  kubectl exec vault-2 -- vault operator unseal $VAULT_UNSEAL_KEY
+  kubectl exec vault-0 -- vault operator raft list-peers
+  kubectl get pods
+  kubectl exec vault-0 -- vault secrets enable database
+  kubectl exec vault-0 -- vault write database/config/mysql \
+    plugin_name=mysql-database-plugin \
+    connection_url="{{username}}:{{password}}@tcp(mysql.default.svc.cluster.local:3306)/" \
+    allowed_roles="readonly" \
+    username="root" \
+    password="$ROOT_PASSWORD"
+  kubectl exec vault-0 -- vault write database/roles/readonly \
+    db_name=mysql \
+    creation_statements="CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}';GRANT SELECT ON *.* TO '{{name}}'@'%';" \
+    default_ttl="1h" \
+    max_ttl="24h"
+  kubectl exec vault-0 -- vault read database/creds/readonly
+
+  kubectl exec --stdin=true --tty=true vault-0 -- vault auth enable kubernetes
+  kubectl exec --stdin=true --tty=true vault-0 -- vault write auth/kubernetes/config token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443" kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt issuer="https://kubernetes.default.svc.cluster.local"
+  #kubectl exec --stdin=true --tty=true vault-0 -- /bin/sh -c 'vault policy write devwebapp - path "secret/data/devwebapp/config" { capabilities = ["read"] }'
+  kubectl exec --stdin=true --tty=true vault-0 -- vault policy write devwebapp - <<EOF
+path "secret/data/devwebapp/config" {
+  capabilities = ["read"]
+}
+EOF
+  kubectl exec --stdin=true --tty=true vault-0 -- vault write auth/kubernetes/role/devweb-app \
+    bound_service_account_names=internal-app \
+    bound_service_account_namespaces=default \
+    policies=devwebapp \
+    ttl=24h
+
+
+  kubectl create sa internal-app
+  #kubectl apply --filename internal-app.yaml
+  kubectl apply --filename devwebapp.yaml
+  ~/.kubash/w8s/generic.w8 devwebapp default
+  kubectl exec --stdin=true \
+    --tty=true devwebapp \
+    --container devwebapp \
+    -- cat /vault/secrets/database-connect.sh
+}
+
+main () {
+  mysql_run
+  vault_run
+  nexty
+}
+time main $@
