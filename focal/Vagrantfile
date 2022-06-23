@@ -3,12 +3,12 @@
 Vagrant.configure("2") do |config|
   config.vm.box = "generic/ubuntu2004"
   config.vm.provision "shell", inline: <<-SHELL
-			#!/bin/bash
-			: ${NOMAD_VERSION:=1.3.1}
-			: ${WAYPOINT_VERSION:=0.8.2}
+      #!/bin/bash
+      : ${NOMAD_VERSION:=1.3.1}
+      : ${WAYPOINT_VERSION:=0.8.2}
       : ${CONSUL_VERSION:=1.12.2}
 
-			set -ux
+      set -ux
       sudo apt-get update
       sudo apt-get -yqq install ca-certificates curl gnupg lsb-release
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -18,31 +18,31 @@ Vagrant.configure("2") do |config|
 
       cd
       echo 'export PATH=$HOME/bin:$PATH' >> .bashrc
-			git clone --depth=1 https://github.com/hashicorp/waypoint-examples.git
-			mkdir bin
-			cd bin
+      git clone --depth=1 https://github.com/hashicorp/waypoint-examples.git
+      mkdir bin
+      cd bin
       curl https://releases.hashicorp.com/nomad/${NOMAD_VERSION}/nomad_${NOMAD_VERSION}_linux_amd64.zip -o nomad_${NOMAD_VERSION}_linux_amd64.zip
-			unzip nomad_${NOMAD_VERSION}_linux_amd64.zip
-			rm -v nomad_${NOMAD_VERSION}_linux_amd64.zip
-			chmod +x nomad
-			curl https://releases.hashicorp.com/waypoint/${WAYPOINT_VERSION}/waypoint_${WAYPOINT_VERSION}_linux_amd64.zip -o waypoint_${WAYPOINT_VERSION}_linux_amd64.zip
+      unzip nomad_${NOMAD_VERSION}_linux_amd64.zip
+      rm -v nomad_${NOMAD_VERSION}_linux_amd64.zip
+      chmod +x nomad
+      curl https://releases.hashicorp.com/waypoint/${WAYPOINT_VERSION}/waypoint_${WAYPOINT_VERSION}_linux_amd64.zip -o waypoint_${WAYPOINT_VERSION}_linux_amd64.zip
       unzip waypoint_${WAYPOINT_VERSION}_linux_amd64.zip
       rm -v waypoint_${WAYPOINT_VERSION}_linux_amd64.zip
       chmod +x waypoint
       curl https://releases.hashicorp.com/consul/${CONSUL_VERSION}/consul_${CONSUL_VERSION}_linux_amd64.zip -o consul_${CONSUL_VERSION}_linux_amd64.zip
-			unzip consul_${CONSUL_VERSION}_linux_amd64.zip
-			rm -v consul_${CONSUL_VERSION}_linux_amd64.zip
-			chmod +x consul
+      unzip consul_${CONSUL_VERSION}_linux_amd64.zip
+      rm -v consul_${CONSUL_VERSION}_linux_amd64.zip
+      chmod +x consul
       ls -alh
 
       cd
-			mkdir -p /data/waypoint-server
-			chown 100 /data/waypoint-server
+      mkdir -p /data/waypoint-server
+      chown 100 /data/waypoint-server
 
-			echo 'client { host_volume "waypoint-server" { path = "/data/waypoint-server", read_only = false }}'>nomad.config
+      echo 'client { host_volume "waypoint-server" { path = "/data/waypoint-server", read_only = false }}'>nomad.config
 
 
-			echo 'IFACE=eth0
+      echo 'IFACE=eth0
       echo -n 'starting consul...'
       consul agent -dev 1> /tmp/consul.log 2>/tmp/consul.err &
       consul_up=1
@@ -56,22 +56,22 @@ Vagrant.configure("2") do |config|
       echo '.'
       echo 'consul is up'
       sleep 1
-			nomad agent -dev -network-interface=$IFACE -config=nomad.config 1>/tmp/nomad.stdout 2>/tmp/nomad.stderr &
-			THIS_RESULT=1
-			THIS_COUNT=0
-			echo -n "Awaiting nomad to start."
-			until [[ $THIS_RESULT == 0 ]];
-			do
-				nomad status &> /dev/null
-				THIS_RESULT=$?
-				sleep 2
-				((++THIS_COUNT))
-			done
-			echo "# $THIS_COUNT"
-			time waypoint install -platform=nomad -accept-tos -nomad-host-volume=waypoint-server -nomad-consul-service=false
-			cd ~/waypoint-examples/nomad/nodejs
-			waypoint init
+      nomad agent -dev -network-interface=$IFACE -config=nomad.config 1>/tmp/nomad.stdout 2>/tmp/nomad.stderr &
+      THIS_RESULT=1
+      THIS_COUNT=0
+      echo -n "Awaiting nomad to start."
+      until [[ $THIS_RESULT == 0 ]];
+      do
+        nomad status &> /dev/null
+        THIS_RESULT=$?
+        sleep 2
+        ((++THIS_COUNT))
+      done
+      echo "# $THIS_COUNT"
+      time waypoint install -platform=nomad -accept-tos -nomad-host-volume=waypoint-server -nomad-consul-service=false
+      cd ~/waypoint-examples/nomad/nodejs
+      waypoint init
       waypoint up' > start.sh
       chmod +x start.sh
   SHELL
-	end
+  end
